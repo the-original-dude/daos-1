@@ -168,6 +168,9 @@ dtx_status_handle(struct dtx_resync_args *dra)
 					&dre->dre_xid, dre->dre_hash,
 					dre->dre_intent == DAOS_INTENT_PUNCH ?
 					true : false);
+		D_DEBUG(DB_TRACE, "DTX "DF_UOID"/"DF_DTI" status %d/%d\n",
+			DP_UOID(dre->dre_oid), DP_DTI(&dre->dre_xid), rc, rc1);
+
 		if (rc1 == DTX_ST_COMMITTED) {
 			/* The DTX is in CoS cache (committable), do nothing. */
 			dtx_dre_release(drh, dre);
