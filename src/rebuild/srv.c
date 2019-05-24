@@ -1875,6 +1875,20 @@ rebuild_tgt_prepare(crt_rpc_t *rpc, struct rebuild_tgt_pool_tracker **p_rpt)
 		}
 	}
 
+	if (pool->sp_iv_ns) {
+		/* XXX snapshot will not be allowed to be changed during
+		 * rebuild, let's invalidate local snapshot cache before
+		 * rebuild, so to make sure rebuild will use the updated
+		 * snapshot during rebuild fetch, otherwise it may cause
+		 * corruption.
+		 */
+		rc = cont_iv_snapshot_invalidate(pool->sp_iv_ns,
+						 CRT_IV_SHORTCUT_NONE,
+						 CRT_IV_SYNC_NONE);
+		if (rc)
+			D_GOTO(out, rc);
+	}
+
 	/* Create rpt for the target */
 	rc = rpt_create(pool, rsi->rsi_svc_list, rsi->rsi_rebuild_ver,
 			rsi->rsi_leader_term, &rpt);

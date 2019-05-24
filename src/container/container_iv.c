@@ -434,6 +434,22 @@ cont_iv_update(void *ns, int class_id, uuid_t key_uuid,
 }
 
 int
+cont_iv_snapshot_invalidate(void *ns, unsigned int shortcut,
+			    unsigned int sync_mode)
+{
+	struct ds_iv_key	key = { 0 };
+	int			rc;
+
+	D_ASSERT(dss_get_module_info()->dmi_xs_id == 0);
+	key.class_id = IV_CONT_SNAP;
+	rc = ds_iv_invalidate(ns, &key, shortcut, sync_mode, 0);
+	if (rc)
+		D_ERROR("iv invalidate failed %d\n", rc);
+
+	return rc;
+}
+
+int
 cont_iv_snapshots_fetch(void *ns, uuid_t cont_uuid, uint64_t **snapshots,
 			int *snap_count)
 {
