@@ -74,7 +74,8 @@ key_punch(struct vos_object *obj, daos_epoch_t epoch, uint32_t pm_ver,
 		rbund.rb_iov = dkey;
 		rbund.rb_tclass	= VOS_BTR_DKEY;
 
-		rc = key_tree_punch(obj, obj->obj_toh, &kiov, &riov, flags);
+		rc = key_tree_punch(obj, obj->obj_toh, epoch, &kiov, &riov,
+				    flags);
 		if (rc != 0)
 			D_GOTO(out, rc);
 
@@ -95,7 +96,8 @@ key_punch(struct vos_object *obj, daos_epoch_t epoch, uint32_t pm_ver,
 		for (i = 0; i < akey_nr; i++) {
 			kbund.kb_key = &akeys[i];
 			rbund.rb_iov = &akeys[i];
-			rc = key_tree_punch(obj, toh, &kiov, &riov, flags);
+			rc = key_tree_punch(obj, toh, epoch, &kiov, &riov,
+					    flags);
 			if (rc != 0)
 				break;
 		}
@@ -143,7 +145,7 @@ vos_obj_punch(daos_handle_t coh, daos_unit_oid_t oid, daos_epoch_t epoch,
 	vos_dth_set(dth);
 	cont = vos_hdl2cont(coh);
 
-	rc = vos_tx_begin(cont->vc_pool);
+	rc = vos_tx_begin(vos_cont2umm(cont));
 	if (rc != 0)
 		goto reset;
 
@@ -169,7 +171,7 @@ vos_obj_punch(daos_handle_t coh, daos_unit_oid_t oid, daos_epoch_t epoch,
 	if (dth != NULL && rc == 0)
 		rc = vos_dtx_prepared(dth);
 
-	rc = vos_tx_end(cont->vc_pool, rc);
+	rc = vos_tx_end(vos_cont2umm(cont), rc);
 	if (obj != NULL)
 		vos_obj_release(vos_obj_cache_current(), obj);
 
@@ -1279,19 +1281,19 @@ vos_obj_iter_copy(struct vos_iterator *iter, vos_iter_entry_t *it_entry,
 static int
 obj_iter_delete(struct vos_obj_iter *oiter, void *args)
 {
-	int		rc = 0;
-	struct vos_pool	*vpool;
+	struct umem_instance	*umm;
+	int			 rc = 0;
 
 	D_DEBUG(DB_TRACE, "BTR delete called of obj\n");
-	vpool = vos_obj2pool(oiter->it_obj);
+	umm = vos_obj2umm(oiter->it_obj);
 
-	rc = vos_tx_begin(vpool);
+	rc = vos_tx_begin(umm);
 	if (rc != 0)
 		goto exit;
 
 	rc = dbtree_iter_delete(oiter->it_hdl, args);
 
-	rc = vos_tx_end(vpool, rc);
+	rc = vos_tx_end(umm, rc);
 exit:
 	if (rc != 0)
 		D_ERROR("Failed to delete iter entry: %d\n", rc);
@@ -1359,15 +1361,15 @@ static int
 vos_oi_set_attr_helper(daos_handle_t coh, daos_unit_oid_t oid,
 		       daos_epoch_t epoch, uint64_t attr, bool set)
 {
-	struct vos_pool		*vpool;
+	struct umem_instance	*umm;
 	struct vos_object	*obj = NULL;
 	struct vos_container	*cont;
 	daos_epoch_range_t	 epr = {epoch, epoch};
 	int			 rc;
 
 	cont = vos_hdl2cont(coh);
-	vpool = vos_cont2pool(cont);
-	rc = vos_tx_begin(vpool);
+	umm = vos_cont2umm(cont);
+	rc = vos_tx_begin(umm);
 	if (rc != 0)
 		goto exit;
 
@@ -1392,7 +1394,7 @@ vos_oi_set_attr_helper(daos_handle_t coh, daos_unit_oid_t oid,
 
 	rc = vos_df_ts_update(obj, &obj->obj_df->vo_latest, &epr);
 end:
-	rc = vos_tx_end(vpool, rc);
+	rc = vos_tx_end(umm, rc);
 exit:
 	if (rc != 0)
 		D_DEBUG(DB_IO, "Failed to set attributes on object: %d\n", rc);

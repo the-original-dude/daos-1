@@ -461,14 +461,15 @@ ioc_trim_tail_holes(struct vos_io_context *ioc)
 }
 
 static int
-akey_fetch(struct vos_io_context *ioc, daos_handle_t ak_toh)
+akey_fetch(struct vos_io_context *ioc, const daos_epoch_range_t *epr,
+	   daos_handle_t ak_toh)
 {
-	daos_iod_t	*iod = &ioc->ic_iods[ioc->ic_sgl_at];
-	struct vos_krec_df *krec = NULL;
-	daos_handle_t	 toh = DAOS_HDL_INVAL;
-	daos_epoch_range_t	val_epr = {0, ioc->ic_epoch};
-	int		 i, rc;
-	int		 flags = 0;
+	daos_iod_t		*iod = &ioc->ic_iods[ioc->ic_sgl_at];
+	struct vos_krec_df	*krec = NULL;
+	daos_epoch_range_t	 val_epr = *epr;
+	daos_handle_t		 toh = DAOS_HDL_INVAL;
+	int			 i, rc;
+	int			 flags = 0;
 
 	D_DEBUG(DB_IO, "akey %d %s fetch %s eph "DF_U64"\n",
 		(int)iod->iod_name.iov_len, (char *)iod->iod_name.iov_buf,
@@ -584,9 +585,10 @@ iod_set_cursor(struct vos_io_context *ioc, unsigned int sgl_at)
 static int
 dkey_fetch(struct vos_io_context *ioc, daos_key_t *dkey)
 {
-	struct vos_object *obj = ioc->ic_obj;
-	daos_handle_t	   toh;
-	int		   i, rc;
+	struct vos_object	*obj = ioc->ic_obj;
+	daos_handle_t		 toh;
+	daos_epoch_range_t	 epr = {0, ioc->ic_epoch};
+	int			 i, rc;
 
 	rc = obj_tree_init(obj);
 	if (rc != 0)
@@ -608,7 +610,7 @@ dkey_fetch(struct vos_io_context *ioc, daos_key_t *dkey)
 
 	for (i = 0; i < ioc->ic_iod_nr; i++) {
 		iod_set_cursor(ioc, i);
-		rc = akey_fetch(ioc, toh);
+		rc = akey_fetch(ioc, &epr, toh);
 		if (rc != 0)
 			break;
 	}

@@ -295,7 +295,7 @@ vos_cont_create(daos_handle_t poh, uuid_t co_uuid)
 		D_GOTO(exit, rc = -DER_EXIST);
 	}
 
-	rc = vos_tx_begin(vpool);
+	rc = vos_tx_begin(vos_pool2umm(vpool));
 	if (rc != 0)
 		goto exit;
 
@@ -304,7 +304,7 @@ vos_cont_create(daos_handle_t poh, uuid_t co_uuid)
 
 	rc = dbtree_update(vpool->vp_cont_th, &key, &value);
 
-	rc = vos_tx_end(vpool, rc);
+	rc = vos_tx_end(vos_pool2umm(vpool), rc);
 exit:
 	return rc;
 }
@@ -540,7 +540,7 @@ vos_cont_destroy(daos_handle_t poh, uuid_t co_uuid)
 		D_GOTO(exit, rc);
 	}
 
-	rc = vos_tx_begin(vpool);
+	rc = vos_tx_begin(vos_pool2umm(vpool));
 	if (rc != 0)
 		goto failed;
 
@@ -554,7 +554,7 @@ vos_cont_destroy(daos_handle_t poh, uuid_t co_uuid)
 	rc = dbtree_delete(vpool->vp_cont_th, &iov, NULL);
 
 end:
-	rc = vos_tx_end(vpool, rc);
+	rc = vos_tx_end(vos_pool2umm(vpool), rc);
 failed:
 	if (rc != 0)
 		D_ERROR("Destroying container transaction failed %d\n", rc);
@@ -754,13 +754,13 @@ cont_iter_delete(struct vos_iterator *iter, void *args)
 	int			rc  = 0;
 
 	D_ASSERT(iter->it_type == VOS_ITER_COUUID);
-	rc = vos_tx_begin(co_iter->cot_pool);
+	rc = vos_tx_begin(vos_pool2umm(co_iter->cot_pool));
 	if (rc != 0)
 		goto failed;
 
 	rc = dbtree_iter_delete(co_iter->cot_hdl, args);
 
-	rc = vos_tx_end(co_iter->cot_pool, rc);
+	rc = vos_tx_end(vos_pool2umm(co_iter->cot_pool), rc);
 failed:
 	if (rc != 0)
 		D_ERROR("Failed to delete oid entry: %d\n", rc);

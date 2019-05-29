@@ -644,19 +644,17 @@ static int
 oi_iter_delete(struct vos_iterator *iter, void *args)
 {
 	struct vos_oi_iter	*oiter = iter2oiter(iter);
-	struct vos_pool		*vpool;
 	int			rc = 0;
 
 	D_ASSERT(iter->it_type == VOS_ITER_OBJ);
-	vpool = vos_cont2pool(oiter->oit_cont);
 
-	rc = vos_tx_begin(vpool);
+	rc = vos_tx_begin(vos_cont2umm(oiter->oit_cont));
 	if (rc != 0)
 		goto exit;
 
 	rc = dbtree_iter_delete(oiter->oit_hdl, args);
 
-	rc = vos_tx_end(vpool, rc);
+	rc = vos_tx_end(vos_cont2umm(oiter->oit_cont), rc);
 
 	if (rc != 0)
 		D_ERROR("Failed to delete oid entry: %d\n", rc);

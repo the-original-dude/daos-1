@@ -1139,18 +1139,19 @@ vos_dtx_check_availability(struct umem_instance *umm, daos_handle_t coh,
 
 		if (obj->vo_oi_attr & VOS_OI_REMOVED)
 			hidden = true;
-		break;
 	}
+	break;
 	case DTX_RT_KEY: {
 		struct vos_krec_df	*key;
 
 		key = umem_off2ptr(umm, record);
 		if (key->kr_bmap & KREC_BF_REMOVED)
 			hidden = true;
-		break;
 	}
+	break;
 	case DTX_RT_SVT:
 	case DTX_RT_EVT:
+	case DTX_RT_ILOG:
 		break;
 	default:
 		D_ERROR("Unexpected DTX type %u\n", type);
@@ -1227,11 +1228,11 @@ vos_dtx_check_availability(struct umem_instance *umm, daos_handle_t coh,
 			 *	cannot get the proper sub-trees.
 			 */
 			if (dtx->te_flags & DTX_EF_EXCHANGE_PENDING) {
-				rc = vos_tx_begin(cont->vc_pool);
+				rc = vos_tx_begin(vos_cont2umm(cont));
 				if (rc == 0) {
 					dtx_rec_release(umm, entry,
 							false, false);
-					rc = vos_tx_end(cont->vc_pool, 0);
+					rc = vos_tx_end(vos_cont2umm(cont), 0);
 				}
 
 				if (rc != 0)
@@ -1287,6 +1288,89 @@ vos_dtx_check_availability(struct umem_instance *umm, daos_handle_t coh,
 		D_ERROR("Unexpected DTX state %u\n", dtx->te_state);
 		return -DER_INVAL;
 	}
+}
+
+static enum ilog_status
+dtx_update_check(const struct ilog_id *id, void *arg)
+{
+	struct umem_instance	*umm = arg;
+	struct vos_dtx_entry_df	*dtx;
+
+	if (id->id_dtx == 0)
+		return ILOG_VISIBLE;
+
+	dtx = umem_off2ptr(umm, id->id_dtx);
+	if (dtx->te_state == DTX_ST_PREPARED)
+		return ILOG_INVISIBLE;
+
+	return ILOG_VISIBLE;
+}
+
+
+/* The caller has started PMDK transaction */
+int
+vos_dtx_register_ilog(struct umem_instance *umm, daos_epoch_t epoch, bool punch,
+		      umem_off_t record, uint32_t type)
+{
+	struct ilog_df			*ilog = NULL;
+	struct dtx_handle		*dth = vos_dth_get();
+	struct vos_dtx_entry_df		*dtx;
+	struct vos_dtx_record_df	*rec;
+	struct ilog_id			 id;
+	daos_handle_t			 loh;
+	umem_off_t			 rec_umoff = UMOFF_NULL;
+	umem_off_t			 dtx_entry = UMOFF_NULL;
+	int				 rc = 0;
+
+	switch (type) {
+	case DTX_RT_KEY: {
+		struct vos_krec_df	*key;
+		ilog = &key->kr_ilog;
+		key = umem_off2ptr(umm, record);
+		break;
+	}
+	default:
+		D_ERROR("Unsupported incarnation log DTX type %u\n", type);
+		return -DER_INVAL;
+	}
+	rec_umoff = umem_zalloc(umm, sizeof(struct vos_dtx_record_df));
+	if (dtx_is_null(rec_umoff))
+		return -DER_NOSPACE;
+
+	if (dth == NULL)
+		goto insert_ilog;
+
+	rec = umem_off2ptr(umm, rec_umoff);
+	rec->tr_type = type;
+	rec->tr_flags = 0;
+	rec->tr_record = record;
+	rec->tr_next = UMOFF_NULL;
+
+	if (dtx_is_null(dth->dth_ent)) {
+		rc = vos_dtx_alloc(umm, dth, rec_umoff, &dtx);
+		if (rc != 0)
+			return rc;
+	} else {
+		vos_dtx_append(umm, dth, rec_umoff, record, type, 0, &dtx);
+	}
+
+	dtx_entry = dth->dth_ent;
+insert_ilog:
+	rc = ilog_open(umm, ilog, &loh);
+	if (rc != 0) {
+		D_ERROR("Could not open incarnation log: %s\n", d_errstr(rc));
+		return rc;
+	}
+	id.id_epoch = epoch;
+	id.id_dtx = dtx_entry;
+	rc = ilog_update(loh, NULL, ILOG_OP_UPDATE, &id, punch,
+			 dtx_update_check, umm);
+	if (rc != 0)
+		D_ERROR("Problem with incarnation log update: %s\n",
+			d_errstr(rc));
+	ilog_close(loh);
+
+	return rc;
 }
 
 /* The caller has started PMDK transaction. */
@@ -1355,7 +1439,8 @@ vos_dtx_register_record(struct umem_instance *umm, umem_off_t record,
 	}
 
 	if (dth == NULL) {
-		*entry = UMOFF_NULL;
+		if (entry != NULL)
+			entry = UMOFF_NULL;
 		if (shares != NULL)
 			*shares = 0;
 
@@ -1595,10 +1680,10 @@ vos_dtx_commit(daos_handle_t coh, struct dtx_id *dtis, int count)
 	D_ASSERT(cont != NULL);
 
 	/* Commit multiple DTXs via single PMDK transaction. */
-	rc = vos_tx_begin(cont->vc_pool);
+	rc = vos_tx_begin(vos_cont2umm(cont));
 	if (rc == 0) {
 		vos_dtx_commit_internal(cont, dtis, count);
-		rc = vos_tx_end(cont->vc_pool, rc);
+		rc = vos_tx_end(vos_cont2umm(cont), rc);
 	}
 
 	return rc;
@@ -1627,13 +1712,13 @@ vos_dtx_abort(daos_handle_t coh, struct dtx_id *dtis, int count, bool force)
 	D_ASSERT(cont != NULL);
 
 	/* Abort multiple DTXs via single PMDK transaction. */
-	rc = vos_tx_begin(cont->vc_pool);
+	rc = vos_tx_begin(vos_cont2umm(cont));
 	if (rc != 0)
 		return rc;
 
 	rc = vos_dtx_abort_internal(cont, dtis, count, force);
 
-	return vos_tx_end(cont->vc_pool, rc);
+	return vos_tx_end(vos_cont2umm(cont), rc);
 }
 
 int
@@ -1652,7 +1737,7 @@ vos_dtx_aggregate(daos_handle_t coh, uint64_t max, uint64_t age)
 	umm = &cont->vc_pool->vp_umm;
 	tab = &cont->vc_cont_df->cd_dtx_table_df;
 
-	rc = vos_tx_begin(cont->vc_pool);
+	rc = vos_tx_begin(vos_cont2umm(cont));
 	if (rc != 0)
 		return rc;
 
@@ -1677,7 +1762,10 @@ vos_dtx_aggregate(daos_handle_t coh, uint64_t max, uint64_t age)
 		dtx_rec_release(umm, umoff, false, true);
 	}
 
-	vos_tx_end(cont->vc_pool, 0);
+	/* This function needs to handle failures.  tx_add_ptr can fail as
+	 * can dbtree_delete
+	 */
+	vos_tx_end(vos_cont2umm(cont), 0);
 	return count < max ? 1 : 0;
 }
 
