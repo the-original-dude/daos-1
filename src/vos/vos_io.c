@@ -1291,6 +1291,13 @@ out:
 	return err;
 }
 
+int vos_update_undo(daos_handle_t coh, daos_unit_oid_t oid, daos_epoch_t epoch,
+		    daos_key_t *dkey, unsigned int nr, daos_iod_t *iods,
+		    struct dtx_handle *dth)
+{
+	return 0;
+}
+
 int
 vos_update_begin(daos_handle_t coh, daos_unit_oid_t oid, daos_epoch_t epoch,
 		 daos_key_t *dkey, unsigned int iod_nr, daos_iod_t *iods,

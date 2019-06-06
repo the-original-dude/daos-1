@@ -558,6 +558,44 @@ vos_update_end(daos_handle_t ioh, uint32_t pm_ver, daos_key_t *dkey, int err,
 	       struct dtx_handle *dth);
 
 /**
+ * Undo a punch of an object, dkey, or akeys for synchronous abort of a
+ * transaction.
+ *
+ * \param coh	[IN]	Container open handle
+ * \param oid	[IN]	object ID, the full object punch will be reverted if
+ *			\a dkey and \a akeys are not provided.
+ * \param epoch	[IN]	Epoch for the punch.
+ * \param dkey	[IN]	Optional, the dkey punch will be reverted if \a akeys
+ *			is not provided.
+ * \param akey_nr [IN]	Number of akeys in \a akeys.
+ * \param akeys [IN]	Array of akeys punched to be reverted.
+ * \param dth	[IN]	Pointer to the DTX handle.
+ *
+ * \return		Zero on success, negative value if error
+ */
+int
+vos_obj_punch_undo(daos_handle_t coh, daos_unit_oid_t oid, daos_epoch_t epoch,
+		   daos_key_t *dkey, unsigned int akey_nr, daos_key_t *akeys,
+		   struct dtx_handle *dth);
+
+/**
+ * Remove records added by a previous update for synchronous abort of a
+ * transaction.
+ *
+ * \param coh	 [IN]	Container open handle
+ * \param oid	 [IN]	object ID
+ * \param epoch	 [IN]	Epoch for the removal
+ * \param dkey	 [IN]	Distribution key.
+ * \param iod_nr [IN]	Number of I/O descriptors in \a iods.
+ * \param iods   [IN]	Array of I/O descriptors describing original I/O.
+ *
+ * \return		Zero on success, negative value if error
+ */
+int vos_update_undo(daos_handle_t coh, daos_unit_oid_t oid, daos_epoch_t epoch,
+		    daos_key_t *dkey, unsigned int nr, daos_iod_t *iods,
+		    struct dtx_handle *dth);
+
+/**
  * Get the I/O descriptor.
  *
  * \param ioh	[IN]	The I/O handle.

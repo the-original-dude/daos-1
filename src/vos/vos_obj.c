@@ -182,6 +182,14 @@ reset:
 	return rc;
 }
 
+int
+vos_obj_punch_undo(daos_handle_t coh, daos_unit_oid_t oid, daos_epoch_t epoch,
+		   daos_key_t *dkey, unsigned int akey_nr, daos_key_t *akeys,
+		   struct dtx_handle *dth)
+{
+	return 0;
+}
+
 /**
  * @defgroup vos_obj_iters VOS object iterators
  * @{
