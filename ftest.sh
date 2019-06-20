@@ -139,6 +139,7 @@ trap 'set +e; cleanup' EXIT
 DAOS_BASE=${SL_PREFIX%/install}
 if ! pdsh -l "${REMOTE_ACCT:-jenkins}" -R ssh -S \
     -w "$(IFS=','; echo "${nodes[*]}")" "set -ex
+which ior || true
 ulimit -c unlimited
 if [ \"\${HOSTNAME%%%%.*}\" != \"${nodes[0]}\" ]; then
     if grep /mnt/daos\\  /proc/mounts; then
