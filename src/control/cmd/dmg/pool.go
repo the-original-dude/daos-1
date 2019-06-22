@@ -32,6 +32,7 @@ import (
 	pb "github.com/daos-stack/daos/src/control/common/proto/mgmt"
 	"github.com/inhies/go-bytesize"
 	"github.com/pkg/errors"
+	uuid "github.com/satori/go.uuid"
 )
 
 const (
@@ -185,11 +186,16 @@ func createPool(
 			maxNumSvcReps, numSvcReps)
 	}
 
+	u, err := uuid.NewV4()
+	if err != nil {
+		return errors.Wrap(err, "generating pool uuid")
+	}
+
 	req := &pb.CreatePoolReq{
 		Scmbytes: uint64(scmBytes), Nvmebytes: uint64(nvmeBytes),
 		Ranks: rankList, Numsvcreps: numSvcReps,
 		// TODO: format and populate user/group
-		Sys: sys,
+		Sys: sys, Uuid: u,
 	}
 
 	fmt.Printf("Creating DAOS pool: %+v\n", req)
