@@ -330,7 +330,10 @@ nodes before starting it.
 
 The DAOS security framework relies on certificates to authenticate
 administrators. The security infrastructure is currently under
-development and will be delivered in DAOS v1.0. Initial support for certificates has been added to DAOS and can be disable either via the command line or in the DAOS server configuration file.
+development and will be delivered in DAOS v1.0. Initial support for certificates
+has been added to DAOS and can be disabled either via the command line or in the
+DAOS server configuration file. Currently the easiest way to disable certificate
+support is to pass the -i flag to daos\_server.
 
 ### Server Configuration File
 
@@ -397,7 +400,9 @@ port: 10001
 
 **Transport Certificate Credentials**
 
-Certificate support for securing the administrative channel for the DAOS components is specified in a key called transport_config: It contains the following keys with these default values
+Certificate support for securing the administrative channel for the DAOS
+components is specified in a key called transport_config: It contains the
+following keys with these default values
 
 
 ***Allow Insecure Communications***
@@ -1121,7 +1126,10 @@ nodes before starting it.
 
 The DAOS security framework relies on certificates to authenticate
 administrators. The security infrastructure is currently under
-development and will be delivered in DAOS v1.0. Initial support for certificates has been added to DAOS and can be disable either via the command line or in the DAOS Agent configuration file.
+development and will be delivered in DAOS v1.0. Initial support for certificates
+has been added to DAOS and can be disabled either via the command line or in the
+DAOS Agent configuration file. Currently the easiest way to disable certificate
+support is to pass the -i flag to daos\_agent.
 
 ### Server Configuration File
 
@@ -1151,7 +1159,7 @@ available at
 <https://github.com/daos-stack/daos/tree/master/utils/config>
 
 The Location of this configuration file is determined by first checking
-for the path specified through the -o option of the daos\_agentcommand
+for the path specified through the -o option of the daos\_agent command
 line. Otherwise, /etc/daos\_agent_.conf is used.
 
 **Name associated with the DAOS system**
@@ -1187,7 +1195,9 @@ port: 10001
 
 **Transport Certificate Credentials**
 
-Certificate support for securing the administrative channel for the DAOS components is specified in a key called transport_config: It contains the following keys with these default values
+Certificate support for securing the administrative channel for the DAOS
+components is specified in a key called transport_config: It contains the
+following keys with these default values
 
 
 ***Allow Insecure Communications***
@@ -1212,7 +1222,8 @@ key: ./.daos/daos\_agent.key
 
 **Use the given directory for creating unix domain sockets**
 
-DAOS Agent uses unix domain sockets for communication with other system components. This setting is the base location to place the sockets in.
+DAOS Agent uses unix domain sockets for communication with other system
+components. This setting is the base location to place the sockets in.
 
 default: /var/run/daos\agent
 
@@ -1227,7 +1238,11 @@ log\_file: /tmp/daos\_agent2.log
 ## Agent Startup
 --------------
 
-DAOS Agent is a standalone application to be run on each compute node. It can be configured to use secure communications (default) or can be allowed to communicate with the control plane over unencrypted channels. The example below for executing daos_agent specifies to operate in insecure mode as certificate support is not fully integrated into DAOS as of 0.6
+DAOS Agent is a standalone application to be run on each compute node.
+It can be configured to use secure communications (default) or can be allowed
+to communicate with the control plane over unencrypted channels. The example
+below for executing daos_agent specifies to operate in insecure mode as
+certificate support is not fully integrated into DAOS as of 0.6
 
 To start the DAOS Agent, run:
 ```
@@ -1238,7 +1253,8 @@ System Validation
 -----------------
 
 To validate that the DAOS system is properly installed, the daos\_test
-suite can be executed. Ensure the DAOS Agent is configuerd and running before running daos\_test:
+suite can be executed. Ensure the DAOS Agent is configuered and running before
+running daos\_test:
 
 [[]{#_Toc4574315 .anchor}]{#_Toc4572376 .anchor}orterun -np
 &lt;num\_clients&gt; --hostfile \${hostfile} --ompi-server
