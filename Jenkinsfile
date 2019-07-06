@@ -334,7 +334,7 @@ pipeline {
                             sh '''rm -rf daos-devel/
                                   mkdir daos-devel/
                                   mv install/{lib,include} daos-devel/'''
-                            archiveArtifacts artifacts: 'daos-devel/**'
+                            archiveArtifacts artifacts: 'daos-devel/**,.build_vars.*'
                             sh "rm -rf _build.external${arch}"
                             /* temporarily moved into stepResult due to JENKINS-39203
                             githubNotify credentialsId: 'daos-jenkins-commit-status',
