@@ -86,6 +86,47 @@ struct bio_blob_hdr {
 	uuid_t		bbh_pool;
 };
 
+/* Used to preallocate buffer to query error log pages from SPDK health info */
+#define DAOS_MAX_ERROR_LOG_PAGES 256
+
+struct bio_device_error_page {
+	uint16_t	bep_sqid;
+	uint16_t	bep_cid;
+	uint16_t	bep_p; /* phase tag */
+	uint16_t	bep_sc; /*status code */
+	uint16_t	bep_sct; /*status code type */
+	uint16_t	bep_loc; /*error location */
+	uint64_t	bep_lba;
+	uint32_t	bep_nsid;
+	uint8_t		bep_vlp; /*vendor specific log page */
+};
+
+/*
+ * Current device state (health statistics). Periodically updated in
+ * bio_bs_monitor().
+ */
+struct bio_device_health_state {
+	uint64_t	bhs_timestamp;
+	/* Health log page information */
+	uint64_t	bhs_power_on_hours;
+	uint64_t	bhs_power_cycles;
+	uint64_t	bhs_unsafe_shutdowns;
+	uint64_t	bhs_media_errors;
+	uint64_t	bhs_error_log_entries; /*lifetime error log entries*/
+	uint16_t	bhs_temperature; /* in Kelvin */
+	/* Critical warnings */
+	uint32_t	bhs_warning_temp_time;
+	uint32_t	bhs_critical_temp_time;
+	uint8_t		bhs_temp_warning;
+	uint8_t		bhs_avail_spare_warning;
+	uint8_t		bhs_dev_reliabilty_warning;
+	uint8_t		bhs_read_only_warning;
+	uint8_t		bhs_volatile_mem_warning; /* volatile memory backup */
+	/* Error log page */
+	uint64_t	bhs_error_count;
+	struct bio_device_error_page bhs_error_entries[DAOS_MAX_ERROR_LOG_PAGES];
+};
+
 static inline void
 bio_addr_set(bio_addr_t *addr, uint16_t type, uint64_t off)
 {

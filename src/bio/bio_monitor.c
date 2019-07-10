@@ -30,10 +30,22 @@
 
 /* Period to query SPDK device health stats (1 min period) */
 #define DAOS_SPDK_STATS_PERIOD	(60 * (NSEC_PER_SEC / NSEC_PER_USEC))
-/* Used to preallocate buffer to query error log pages from SPDK health info */
-#define DAOS_MAX_ERROR_LOG_PAGES 256
 
 uint64_t io_stat_period;
+
+static int
+get_health_timestamp(uint64_t *timestamp)
+{
+	struct timespec now;
+	int		rc;
+
+	rc = clock_gettime(CLOCK_MONOTONIC_COARSE, &now);
+	if (rc != 0)
+		return rc;
+	*timestamp = now.tv_sec;
+
+	return 0;
+}
 
 static void
 dprint_uint128_hex(uint64_t *v)
@@ -81,6 +93,7 @@ get_spdk_err_log_page_completion(struct spdk_bdev_io *bdev_io, bool success,
 				 void *cb_arg)
 {
 	struct bio_health_monitoring			*dev_health = cb_arg;
+	struct bio_device_health_state			*hs;
 	struct spdk_nvme_error_information_entry	*error_entries;
 	struct spdk_nvme_error_information_entry	*error_entry;
 	struct spdk_nvme_ctrlr_data			*cdata;
@@ -97,29 +110,45 @@ get_spdk_err_log_page_completion(struct spdk_bdev_io *bdev_io, bool success,
 		goto out;
 	}
 
+	hs = &dev_health->bhm_health_state;
+
 	bdev = spdk_bdev_desc_get_bdev(dev_health->bhm_desc);
 	D_ASSERT(bdev != NULL);
 
 	cdata = dev_health->bhm_ctrlr_buf;
 	error_entries = dev_health->bhm_error_buf;
 
-	/* TODO Store device error logs in in-memory health state log. */
+	if (getenv("PRINT_HEALTH_INFO") != NULL) {
+		D_PRINT("==================================================\n");
+		D_PRINT("SPDK Device Error Logs [%s]:\n",
+			spdk_bdev_get_name(bdev));
+		D_PRINT("==================================================\n");
+	}
 
-	/* Only print device error logs to console if env is set */
-	if (getenv("PRINT_HEALTH_INFO") == NULL)
-		goto out;
-
-	D_PRINT("==========================================================\n");
-	D_PRINT("SPDK Device Error Logs [%s]:\n", spdk_bdev_get_name(bdev));
-	D_PRINT("==========================================================\n");
 	for (i = 0; i < cdata->elpe; i++) {
 		error_entry = &error_entries[i];
+		hs->bhs_error_count = error_entry->error_count;
 		if (error_entry->error_count == 0) {
 			D_PRINT("No errors found!\n");
 			goto out;
 		}
 		if (i != 0)
 			D_PRINT("-------------\n");
+
+		/* Store device error logs in in-memory health state log. */
+		hs->bhs_error_entries[i].bep_sqid = error_entry->sqid;
+		hs->bhs_error_entries[i].bep_cid = error_entry->cid;
+		hs->bhs_error_entries[i].bep_p = error_entry->status.p;
+		hs->bhs_error_entries[i].bep_sc = error_entry->status.sc;
+		hs->bhs_error_entries[i].bep_sct = error_entry->status.sct;
+		hs->bhs_error_entries[i].bep_loc = error_entry->error_location;
+		hs->bhs_error_entries[i].bep_lba = error_entry->lba;
+		hs->bhs_error_entries[i].bep_nsid = error_entry->nsid;
+		hs->bhs_error_entries[i].bep_vlp = error_entry->vendor_specific;
+
+		/* Only print device error logs to console if env is set */
+		if (getenv("PRINT_HEALTH_INFO") == NULL)
+			goto out;
 
 		D_PRINT("Entry: %u\n", i);
 		D_PRINT("Error count:         0x%"PRIx64"\n",
@@ -174,8 +203,6 @@ get_spdk_identify_ctrlr_completion(struct spdk_bdev_io *bdev_io, bool success,
 	bdev = spdk_bdev_desc_get_bdev(dev_health->bhm_desc);
 	D_ASSERT(bdev != NULL);
 	cdata = dev_health->bhm_ctrlr_buf;
-
-	/* TODO Store device controller data in in-memory health state log. */
 
 	/* Only print device controller data to console if env is set */
 	if (getenv("PRINT_HEALTH_INFO") == NULL)
@@ -244,9 +271,11 @@ get_spdk_log_page_completion(struct spdk_bdev_io *bdev_io, bool success,
 {
 	struct bio_health_monitoring			*dev_health = cb_arg;
 	struct spdk_nvme_health_information_page	*hp;
+	struct bio_device_health_state			*hs;
 	struct spdk_bdev				*bdev;
 	struct spdk_nvme_cmd				 cmd;
 	uint32_t					 cp_sz;
+	uint8_t						 crit_warn;
 	int						 rc;
 	int						 sc, sct;
 
@@ -265,7 +294,33 @@ get_spdk_log_page_completion(struct spdk_bdev_io *bdev_io, bool success,
 	D_ASSERT(bdev != NULL);
 	hp = dev_health->bhm_health_buf;
 
-	/* TODO Store device health info in in-memory health state log. */
+	/* Store device health info in in-memory health state log. */
+	hs = &dev_health->bhm_health_state;
+	rc = get_health_timestamp(&hs->bhs_timestamp);
+	if (rc) {
+		D_ERROR("Could not update dev health monitoring timestamp\n");
+		dev_health->bhm_inflights--;
+		goto out;
+	}
+	hs->bhs_temperature = hp->temperature;
+	crit_warn = hp->critical_warning.bits.temperature;
+	hs->bhs_temp_warning = crit_warn;
+	crit_warn = hp->critical_warning.bits.available_spare;
+	hs->bhs_avail_spare_warning = crit_warn;
+	crit_warn = hp->critical_warning.bits.device_reliability;
+	hs->bhs_dev_reliabilty_warning = crit_warn;
+	crit_warn = hp->critical_warning.bits.read_only;
+	hs->bhs_read_only_warning = crit_warn;
+	crit_warn = hp->critical_warning.bits.volatile_memory_backup;
+	hs->bhs_volatile_mem_warning = crit_warn;
+	hs->bhs_warning_temp_time = hp->warning_temp_time;
+	hs->bhs_critical_temp_time = hp->critical_temp_time;
+	/* TODO Support for large decimal values returned (>64-bit) */
+	hs->bhs_power_on_hours = hp->power_on_hours[0];
+	hs->bhs_power_cycles = hp->power_cycles[0];
+	hs->bhs_media_errors = hp->media_errors[0];
+	hs->bhs_unsafe_shutdowns = hp->unsafe_shutdowns[0];
+	hs->bhs_error_log_entries = hp->num_error_info_log_entries[0];
 
 	/* Only print device health info to console if env is set */
 	if (getenv("PRINT_HEALTH_INFO") == NULL)

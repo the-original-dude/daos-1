@@ -76,14 +76,15 @@ enum bio_bs_state {
  * SPDK device health monitoring.
  */
 struct bio_health_monitoring {
+	struct bio_device_health_state	 bhm_health_state;
 	/* writable open descriptor for health info polling */
-	struct spdk_bdev_desc	*bhm_desc;
-	struct spdk_io_channel	*bhm_io_channel;
-	void			*bhm_health_buf; /* device health info logs */
-	void			*bhm_ctrlr_buf; /* controller data */
-	void			*bhm_error_buf; /* device error logs */
-	uint64_t		 bhm_stat_age;
-	unsigned int		 bhm_inflights;
+	struct spdk_bdev_desc		*bhm_desc;
+	struct spdk_io_channel		*bhm_io_channel;
+	void				*bhm_health_buf; /* health info logs */
+	void				*bhm_ctrlr_buf; /* controller data */
+	void				*bhm_error_buf; /* device error logs */
+	uint64_t			 bhm_stat_age;
+	unsigned int			 bhm_inflights;
 };
 
 /*
