@@ -92,7 +92,9 @@ struct bio_blob_hdr {
  */
 struct bio_device_health_state {
 	uint64_t	 bhs_timestamp;
-	int		 bhs_bio_err;
+	int		 bhs_bio_read_errs;
+	int		 bhs_bio_write_errs;
+	int		 bhs_bio_unmap_errs;
 	/* Health log page information */
 	uint64_t	*bhs_media_errors; /* supports 128-bit values */
 	uint16_t	 bhs_temperature; /* in Kelvin */

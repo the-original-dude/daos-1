@@ -21,10 +21,85 @@
  * portions thereof marked with this legend must also reproduce the markings.
  */
 #define D_LOGFAC	DD_FAC(bio)
-
 #include <spdk/env.h>
 #include <spdk/blob.h>
+#include <spdk/thread.h>
 #include "bio_internal.h"
+
+int
+media_error_cp_arg_init(struct media_error_cp_arg *mea)
+{
+	int	rc;
+
+	rc = ABT_mutex_create(&mea->mea_mutex);
+	if (rc != ABT_SUCCESS)
+		return dss_abterr2der(rc);
+
+	rc = ABT_cond_create(&mea->mea_done);
+	if (rc != ABT_SUCCESS) {
+		ABT_mutex_free(&mea->mea_mutex);
+		return dss_abterr2der(rc);
+	}
+
+	return 0;
+}
+
+void
+media_error_cp_arg_fini(struct media_error_cp_arg *mea)
+{
+	ABT_cond_free(&mea->mea_done);
+	ABT_mutex_free(&mea->mea_mutex);
+}
+
+void
+media_error_completion(struct bio_xs_context *xs_ctxt,
+		       struct media_error_cp_arg *mea)
+{
+	D_ASSERT(xs_ctxt != NULL);
+	if (xs_ctxt->bxc_xs_id == -1)
+		xs_poll_completion(xs_ctxt, &mea->mea_inflights);
+	else {
+		ABT_mutex_lock(mea->mea_mutex);
+		if (mea->mea_inflights)
+			ABT_cond_wait(mea->mea_done, mea->mea_mutex);
+		ABT_mutex_unlock(mea->mea_mutex);
+	}
+}
+
+/*
+ * MEDIA ERROR event.
+ * Store BIO I/O error in in-memory device state. Called from device owner
+ * xstream only.
+ */
+void
+bio_media_error(void *msg_arg)
+{
+	struct media_error_msg		*mem = msg_arg;
+	struct media_error_cp_arg	*mea = &mem->mem_cp_arg;
+	struct bio_device_health_state  *hs;
+
+	hs = &mem->mem_bs->bb_dev_health.bhm_health_state;
+
+	if (mem->mem_unmap) {
+		/* Update unmap error counter */
+		hs->bhs_bio_unmap_errs++;
+		D_ERROR("Unmap error logged from tgt_id:%d\n", mem->mem_tgt_id);
+	} else {
+		/* Update read/write I/O error counters */
+		if (mem->mem_update)
+			hs->bhs_bio_write_errs++;
+		else
+			hs->bhs_bio_read_errs++;
+		D_ERROR("%s error logged from xs_id:%d\n",
+			mem->mem_update ? "Write" : "Read", mem->mem_tgt_id);
+	}
+
+	ABT_mutex_lock(mea->mea_mutex);
+	D_ASSERT(mea->mea_inflights == 1);
+	mea->mea_inflights--;
+	ABT_cond_broadcast(mea->mea_done);
+	ABT_mutex_unlock(mea->mea_mutex);
+}
 
 static void
 dma_free_chunk(struct bio_dma_chunk *chunk)
@@ -1032,15 +1107,33 @@ int
 bio_readv(struct bio_io_context *ioctxt, struct bio_sglist *bsgl,
 	  d_sg_list_t *sgl)
 {
-	int	rc;
+	struct media_error_msg		 mem = { 0 };
+	struct media_error_cp_arg	*mea = &mem.mem_cp_arg;
+	int				 rc;
+
+	rc = media_error_cp_arg_init(mea);
+	if (rc)
+		return rc;
 
 	rc = bio_rwv(ioctxt, bsgl, sgl, false);
-	if (rc)
+	mea->mea_inflights = 1;
+	mem.mem_update = false;
+	mem.mem_bs = ioctxt->bic_xs_ctxt->bxc_blobstore;
+	mem.mem_tgt_id = ioctxt->bic_xs_ctxt->bxc_xs_id;
+
+	if (rc) {
+		spdk_thread_send_msg(owner_thread(mem.mem_bs), bio_media_error,
+				     &mem);
+		/* Wait for media error event to complete */
+		media_error_completion(ioctxt->bic_xs_ctxt, mea);
+
 		D_ERROR("Readv to blob:%p failed for xs:%p, rc:%d\n",
 			ioctxt->bic_blob, ioctxt->bic_xs_ctxt, rc);
-	else
+	} else
 		D_DEBUG(DB_IO, "Readv to blob %p for xs:%p successfully\n",
 			ioctxt->bic_blob, ioctxt->bic_xs_ctxt);
+
+	media_error_cp_arg_fini(mea);
 
 	return rc;
 }
@@ -1049,15 +1142,33 @@ int
 bio_writev(struct bio_io_context *ioctxt, struct bio_sglist *bsgl,
 	   d_sg_list_t *sgl)
 {
-	int	rc;
+	struct media_error_msg		 mem = { 0 };
+	struct media_error_cp_arg	*mea = &mem.mem_cp_arg;
+	int				 rc;
+
+	rc = media_error_cp_arg_init(mea);
+	if (rc)
+		return rc;
 
 	rc = bio_rwv(ioctxt, bsgl, sgl, true);
-	if (rc)
+	mea->mea_inflights = 1;
+	mem.mem_update = true;
+	mem.mem_bs = ioctxt->bic_xs_ctxt->bxc_blobstore;
+	mem.mem_tgt_id = ioctxt->bic_xs_ctxt->bxc_xs_id;
+
+	if (rc) {
+		spdk_thread_send_msg(owner_thread(mem.mem_bs), bio_media_error,
+				     &mem);
+		/* Wait for media error event to complete */
+		media_error_completion(ioctxt->bic_xs_ctxt, mea);
+
 		D_ERROR("Writev to blob:%p failed for xs:%p, rc:%d\n",
 			ioctxt->bic_blob, ioctxt->bic_xs_ctxt, rc);
-	else
+	} else
 		D_DEBUG(DB_IO, "Writev to blob %p for xs:%p successfully\n",
 			ioctxt->bic_blob, ioctxt->bic_xs_ctxt);
+
+	media_error_cp_arg_fini(mea);
 
 	return rc;
 }
@@ -1066,10 +1177,16 @@ static int
 bio_rw(struct bio_io_context *ioctxt, bio_addr_t addr, d_iov_t *iov,
 	bool update)
 {
-	struct bio_sglist	bsgl;
-	struct bio_iov		biov;
-	d_sg_list_t		sgl;
-	int			rc;
+	struct bio_sglist		 bsgl;
+	struct bio_iov			 biov;
+	struct media_error_msg		 mem = { 0 };
+	struct media_error_cp_arg	*mea = &mem.mem_cp_arg;
+	d_sg_list_t			 sgl;
+	int				 rc;
+
+	rc = media_error_cp_arg_init(mea);
+	if (rc)
+		return rc;
 
 	biov.bi_buf = NULL;
 	biov.bi_addr = addr;
@@ -1082,14 +1199,26 @@ bio_rw(struct bio_io_context *ioctxt, bio_addr_t addr, d_iov_t *iov,
 	sgl.sg_nr_out = 0;
 
 	rc = bio_rwv(ioctxt, &bsgl, &sgl, update);
-	if (rc)
+	mea->mea_inflights = 1;
+	mem.mem_update = update;
+	mem.mem_bs = ioctxt->bic_xs_ctxt->bxc_blobstore;
+	mem.mem_tgt_id = ioctxt->bic_xs_ctxt->bxc_xs_id;
+
+	if (rc) {
+		spdk_thread_send_msg(owner_thread(mem.mem_bs), bio_media_error,
+				     &mem);
+		/* Wait for media error event to complete */
+		media_error_completion(ioctxt->bic_xs_ctxt, mea);
+
 		D_ERROR("%s to blob:%p failed for xs:%p, rc:%d\n",
 			update ? "Write" : "Read", ioctxt->bic_blob,
 			ioctxt->bic_xs_ctxt, rc);
-	else
+	} else
 		D_DEBUG(DB_IO, "%s to blob %p for xs:%p successfully\n",
 			update ? "Write" : "Read", ioctxt->bic_blob,
 			ioctxt->bic_xs_ctxt);
+
+	media_error_cp_arg_fini(mea);
 
 	return rc;
 }

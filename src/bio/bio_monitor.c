@@ -409,6 +409,21 @@ bio_bs_monitor(struct bio_xs_context *ctxt, uint64_t now)
 	if (get_bdev_type(bdev) != BDEV_CLASS_NVME)
 		return;
 
+	/*
+	 * TODO:
+	 * Faulty device criteria check (Check current in-memory device health
+	 * state).
+	 * Mechanism to notify admin of if any BIO errors exist. Given I/O
+	 * error, checksum error and health monitoring information, admin can
+	 * determine if device should be marked as FAULTY (SMD device state
+	 * updated).
+	 */
+
+
+	/*
+	 * Continue querying current SPDK device health stats.
+	 */
+
 	if (!spdk_bdev_io_type_supported(bdev, SPDK_BDEV_IO_TYPE_NVME_ADMIN)) {
 		D_ERROR("Bdev NVMe admin passthru not supported!\n");
 		return;

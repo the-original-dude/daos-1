@@ -213,6 +213,21 @@ enum {
 	BDEV_CLASS_UNKNOWN
 };
 
+/* MEDIA ERROR event */
+struct media_error_cp_arg {
+	ABT_mutex	mea_mutex;
+	ABT_cond	mea_done;
+	unsigned int	mea_inflights;
+};
+
+struct media_error_msg {
+	struct bio_blobstore		*mem_bs;
+	struct media_error_cp_arg	 mem_cp_arg;
+	bool				 mem_update; /* read or write error */
+	bool				 mem_unmap; /* unmap error */
+	int				 mem_tgt_id;
+};
+
 /* bio_xstream.c */
 extern unsigned int	bio_chk_sz;
 extern unsigned int	bio_chk_cnt_max;
@@ -225,6 +240,11 @@ void dma_buffer_destroy(struct bio_dma_buffer *buf);
 struct bio_dma_buffer *dma_buffer_create(unsigned int init_cnt);
 void bio_memcpy(struct bio_desc *biod, uint16_t media, void *media_addr,
 		void *addr, ssize_t n);
+int media_error_cp_arg_init(struct media_error_cp_arg *mea);
+void media_error_cp_arg_fini(struct media_error_cp_arg *mea);
+void media_error_completion(struct bio_xs_context *xs_ctxt,
+			    struct media_error_cp_arg *mea);
+void bio_media_error(void *msg_arg);
 
 /* bio_monitor.c */
 int bio_init_health_monitoring(struct bio_blobstore *bb,

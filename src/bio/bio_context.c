@@ -277,38 +277,10 @@ out:
 	return rc;
 }
 
-struct bio_media_error_msg {
-	struct bio_blobstore	*bmem_bs;
-	int			 bmem_rc;
-};
-
-/*
- * MEDIA ERROR event.
- * Store BIO I/O error in in-memory device state. Called from device owner
- * xstream only.
- */
-static void
-bio_media_error(void *msg_arg)
-{
-	struct bio_media_error_msg	*bmem = msg_arg;
-	struct bio_device_health_state  *hs;
-
-	hs = &bmem->bmem_bs->bb_dev_health.bhm_health_state;
-	hs->bhs_bio_err = bmem->bmem_rc;
-
-	/*
-	 * TODO:
-	 * Mechanism to notify admin of BIO error. Given I/O error, checksum
-	 * error and health state information, admin can determin if device
-	 * should be marked as FAULTY (SMD device state updated).
-	 */
-}
-
 int
 bio_blob_delete(uuid_t uuid, struct bio_xs_context *xs_ctxt)
 {
 	struct blob_msg_arg		 bma = { 0 };
-	struct bio_media_error_msg	 bmem = { 0 };
 	struct blob_cp_arg		*ba = &bma.bma_cp_arg;
 	struct bio_blobstore		*bbs;
 	struct smd_nvme_pool_info	 smd_pool;
@@ -360,15 +332,11 @@ bio_blob_delete(uuid_t uuid, struct bio_xs_context *xs_ctxt)
 	blob_wait_completion(xs_ctxt, ba);
 	rc = ba->bca_rc;
 
-	bmem.bmem_bs = bbs;
-	bmem.bmem_rc = rc;
-
-	if (rc != 0) {
-		spdk_thread_send_msg(owner_thread(bbs), bio_media_error, &bmem);
+	if (rc != 0)
 		D_ERROR("Delete blobID "DF_U64" failed for pool:"DF_UUID" "
 			"xs:%p rc:%d\n",
 			blob_id, DP_UUID(uuid), xs_ctxt, rc);
-	} else
+	else
 		D_DEBUG(DB_MGMT, "Successfully deleted blobID "DF_U64" for "
 			"pool:"DF_UUID" xs:%p\n",
 			blob_id, DP_UUID(uuid), xs_ctxt);
@@ -382,7 +350,6 @@ int
 bio_blob_create(uuid_t uuid, struct bio_xs_context *xs_ctxt, uint64_t blob_sz)
 {
 	struct blob_msg_arg		 bma = { 0 };
-	struct bio_media_error_msg	 bmem = { 0 };
 	struct blob_cp_arg		*ba = &bma.bma_cp_arg;
 	struct bio_blobstore		*bbs;
 	struct smd_nvme_pool_info	 smd_pool;
@@ -438,11 +405,7 @@ bio_blob_create(uuid_t uuid, struct bio_xs_context *xs_ctxt, uint64_t blob_sz)
 	blob_wait_completion(xs_ctxt, ba);
 	rc = ba->bca_rc;
 
-	bmem.bmem_rc = rc;
-	bmem.bmem_bs = bbs;
-
 	if (rc != 0) {
-		spdk_thread_send_msg(owner_thread(bbs), bio_media_error, &bmem);
 		D_ERROR("Create blob failed for xs:%p pool:"DF_UUID" rc:%d\n",
 			xs_ctxt, DP_UUID(uuid), rc);
 	} else {
@@ -483,7 +446,6 @@ bio_blob_open(struct bio_io_context *ctxt, uuid_t uuid, bool async)
 	struct smd_nvme_pool_info	 smd_pool;
 	spdk_blob_id			 blob_id;
 	struct blob_msg_arg		*bma;
-	struct bio_media_error_msg	 bmem = { 0 };
 	struct blob_cp_arg		*ba;
 	struct bio_blobstore		*bbs;
 	int				 rc;
@@ -533,11 +495,7 @@ bio_blob_open(struct bio_io_context *ctxt, uuid_t uuid, bool async)
 	rc = ba->bca_rc;
 	ctxt->bic_opening = 0;
 
-	bmem.bmem_rc = rc;
-	bmem.bmem_bs = bbs;
-
 	if (rc != 0) {
-		spdk_thread_send_msg(owner_thread(bbs), bio_media_error, &bmem);
 		D_ERROR("Open blobID "DF_U64" failed for xs:%p pool:"DF_UUID" "
 			"rc:%d\n", blob_id, xs_ctxt, DP_UUID(uuid), rc);
 	} else {
@@ -595,11 +553,10 @@ bio_ioctxt_open(struct bio_io_context **pctxt, struct bio_xs_context *xs_ctxt,
 static int
 bio_blob_close(struct bio_io_context *ctxt, bool async)
 {
-	struct blob_msg_arg		*bma;
-	struct bio_media_error_msg	 bmem = { 0 };
-	struct blob_cp_arg		*ba;
-	struct bio_blobstore		*bbs;
-	int				 rc;
+	struct blob_msg_arg	*bma;
+	struct blob_cp_arg	*ba;
+	struct bio_blobstore	*bbs;
+	int			 rc;
 
 	D_ASSERT(!ctxt->bic_opening);
 	if (ctxt->bic_blob == NULL) {
@@ -639,11 +596,7 @@ bio_blob_close(struct bio_io_context *ctxt, bool async)
 	rc = ba->bca_rc;
 	ctxt->bic_closing = 0;
 
-	bmem.bmem_rc = rc;
-	bmem.bmem_bs = bbs;
-
 	if (rc != 0) {
-		spdk_thread_send_msg(owner_thread(bbs), bio_media_error, &bmem);
 		D_ERROR("Close blob %p failed for xs:%p rc:%d\n",
 			ctxt->bic_blob, ctxt->bic_xs_ctxt, rc);
 	} else {
@@ -688,9 +641,9 @@ int
 bio_blob_unmap(struct bio_io_context *ioctxt, uint64_t off, uint64_t len)
 {
 	struct blob_cp_arg		 ba;
-	struct bio_media_error_msg	 bmem = { 0 };
 	struct spdk_io_channel		*channel;
-	struct bio_blobstore		*bbs;
+	struct media_error_msg		 mem = { 0 };
+	struct media_error_cp_arg	*mea = &mem.mem_cp_arg;
 	uint64_t			 pg_off;
 	uint64_t			 pg_cnt;
 	int				 rc;
@@ -719,7 +672,6 @@ bio_blob_unmap(struct bio_io_context *ioctxt, uint64_t off, uint64_t len)
 
 	D_ASSERT(ioctxt->bic_xs_ctxt != NULL);
 	channel = ioctxt->bic_xs_ctxt->bxc_io_channel;
-	bbs = ioctxt->bic_xs_ctxt->bxc_blobstore;
 
 	if (!is_blob_valid(ioctxt)) {
 		D_ERROR("Blobstore is invalid. blob:%p, closing:%d\n",
@@ -728,7 +680,11 @@ bio_blob_unmap(struct bio_io_context *ioctxt, uint64_t off, uint64_t len)
 	}
 
 	rc = blob_cp_arg_init(&ba);
-	if (rc != 0)
+	if (rc)
+		return rc;
+
+	rc = media_error_cp_arg_init(mea);
+	if (rc)
 		return rc;
 
 	D_DEBUG(DB_MGMT, "Unmapping blob %p pgoff:"DF_U64" pgcnt:"DF_U64"\n",
@@ -744,18 +700,26 @@ bio_blob_unmap(struct bio_io_context *ioctxt, uint64_t off, uint64_t len)
 	rc = ba.bca_rc;
 	ioctxt->bic_inflight_dmas--;
 
-	bmem.bmem_rc = rc;
-	bmem.bmem_bs = bbs;
+	mea->mea_inflights = 1;
+	mem.mem_unmap = true;
+	mem.mem_bs = ioctxt->bic_xs_ctxt->bxc_blobstore;
+	mem.mem_tgt_id = ioctxt->bic_xs_ctxt->bxc_xs_id;
 
-	if (rc != 0) {
-		spdk_thread_send_msg(owner_thread(bbs), bio_media_error, &bmem);
+	if (rc) {
+		spdk_thread_send_msg(owner_thread(mem.mem_bs), bio_media_error,
+				     &mem);
+		/* Wait for media error event to complete */
+		media_error_completion(ioctxt->bic_xs_ctxt, mea);
+
 		D_ERROR("Unmap blob %p failed for xs: %p rc:%d\n",
 			ioctxt->bic_blob, ioctxt->bic_xs_ctxt, rc);
 	} else
 		D_DEBUG(DB_MGMT, "Successfully unmapped blob %p for xs:%p\n",
 			ioctxt->bic_blob, ioctxt->bic_xs_ctxt);
 
+	media_error_cp_arg_fini(mea);
 	blob_cp_arg_fini(&ba);
+
 	return rc;
 }
 
