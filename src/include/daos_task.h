@@ -421,6 +421,8 @@ typedef struct {
 typedef struct {
 	daos_handle_t		oh;
 	daos_handle_t		th;
+	unsigned int		flags;
+	unsigned int		shard;
 	daos_key_t		*dkey;
 	unsigned int		nr;
 	daos_iod_t		*iods;
@@ -428,7 +430,29 @@ typedef struct {
 	daos_iom_t		*maps; /* only valid for fetch */
 } daos_obj_rw_t;
 
+/**
+ * parameter subset for fetch -
+ * daos_handle_t	 oh;
+ * daos_handle_t	 th;
+ * unsigned int		 flags;
+ * unsigned int		 shard;
+ * daos_key_t		*dkey;
+ * unsigned int		 nr;
+ * daos_iod_t		*iods;
+ * d_sg_list_t		*sgls;
+ * daos_iom_t		*maps;
+ */
 typedef daos_obj_rw_t		daos_obj_fetch_t;
+
+/**
+ * parameter subset for update -
+ * daos_handle_t	 oh;
+ * daos_handle_t	 th;
+ * daos_key_t		*dkey;
+ * unsigned int		 nr;
+ * daos_iod_t		*iods;
+ * d_sg_list_t		*sgls;
+ */
 typedef daos_obj_rw_t		daos_obj_update_t;
 
 typedef struct {

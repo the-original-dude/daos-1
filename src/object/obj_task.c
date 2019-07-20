@@ -168,6 +168,7 @@ dc_obj_query_key_task_create(daos_handle_t oh, daos_handle_t th,
 
 int
 dc_obj_fetch_task_create(daos_handle_t oh, daos_handle_t th,
+			 unsigned int flags, unsigned int shard,
 			 daos_key_t *dkey, unsigned int nr,
 			 daos_iod_t *iods, d_sg_list_t *sgls,
 			 daos_iom_t *maps, daos_event_t *ev,
@@ -184,6 +185,8 @@ dc_obj_fetch_task_create(daos_handle_t oh, daos_handle_t th,
 	args = dc_task_get_args(*task);
 	args->oh	= oh;
 	args->th	= th;
+	args->flags	= flags;
+	args->shard	= shard;
 	args->dkey	= dkey;
 	args->nr	= nr;
 	args->iods	= iods;
