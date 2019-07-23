@@ -461,7 +461,7 @@ dtx_key_rec_exchange(struct umem_instance *umm, struct vos_krec_df *key,
 
 	if (rec->tr_flags == DTX_RF_EXCHANGE_TGT) {
 		/* For commit case, should already have been handled
-		 * during handling the soruce.
+		 * during handling the source.
 		 *
 		 * For abort case, set its kr_dtx as aborted. The tgt
 		 * record will be removed via VOS aggregation or other
