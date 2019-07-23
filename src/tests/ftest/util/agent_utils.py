@@ -27,7 +27,6 @@ import os
 import time
 import subprocess
 import json
-import signal
 import getpass
 import socket
 import errno
@@ -114,21 +113,20 @@ def run_agent(basepath, server_list, client_list=None):
     daos_agent_bin = os.path.join(build_vars["PREFIX"], "bin", "daos_agent")
 
     for client in client_list:
-        cmd = [
-            "ssh",
-            client,
-            daos_agent_bin,
-            "-i"
-        ]
+        cmd = ["ssh", client, daos_agent_bin, "-i"]
 
-        p = subprocess.Popen(cmd,
-                             stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE)
-        sessions[client] = p
+        proc = subprocess.Popen(cmd,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
+        sessions[client] = proc
 
     # double check agent launched successfully
     timeout = 5
     for client in client_list:
+        cmd = ["ssh", client, "ps axf | grep agent"]
+
+        print(subprocess.check_output(cmd))
+
         file_desc = sessions[client].stderr.fileno()
         flags = fcntl.fcntl(file_desc, fcntl.F_GETFL)
         fcntl.fcntl(file_desc, fcntl.F_SETFL, flags | os.O_NONBLOCK)
@@ -151,7 +149,7 @@ def run_agent(basepath, server_list, client_list=None):
             expected_data += output
 
             match = re.findall(pattern, output)
-            if len(match) > 0:
+            if match:
                 print("<AGENT> agent started on node {} in {} "
                       "seconds".format(client, time.time() - start_time))
                 break
