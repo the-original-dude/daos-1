@@ -57,7 +57,7 @@ NFS_SERVER=${NFS_SERVER:-${HOSTNAME%%.*}}
 
 trap 'echo "encountered an unchecked return code, exiting with error"' ERR
 
-IFS=" " read -r -a nodes <<< "$(cluset -e $2)"
+IFS=" " read -r -a nodes <<< "${2//,/ }"
 
 # put yaml files back
 restore_dist_files() {
